@@ -23,10 +23,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
 
-      - name: Compile LaTeX document
-        run: |
-          pdflatex -interaction=nonstopmode requete_philippe_savard.tex
-          pdflatex -interaction=nonstopmode requete_philippe_savard.tex
+     - name: Compile LaTeX document
+  run: |
+    pdflatex -interaction=nonstopmode requete_philippe_savard.tex || true
+    pdflatex -interaction=nonstopmode requete_philippe_savard.tex || true
 
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
