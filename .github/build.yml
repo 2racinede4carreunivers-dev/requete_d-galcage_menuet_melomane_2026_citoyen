@@ -1,0 +1,121 @@
+name: Build LaTeX and Create Release
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Compile LaTeX and Generate PDF
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install minimal TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-base texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
+
+      - name: Compile LaTeX document
+        run: |
+          pdflatex -interaction=nonstopmode requete_philippe_savard.tex
+          pdflatex -interaction=nonstopmode requete_philippe_savard.tex
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: requete-philippe-savard-pdf
+          path: requete_philippe_savard.pdf
+
+      - name: Generate build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "requete_philippe_savard.pdf"
+
+      - name: Save PDF path
+        id: pdf
+        run: echo "path=requete_philippe_savard.pdf" >> $GITHUB_OUTPUT
+
+  release:
+    name: Create Release After Successful Build
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract commit message
+        id: commit
+        run: |
+          msg=$(git log -1 --pretty=%B)
+          echo "message=$msg" >> $GITHUB_OUTPUT
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          msg="${{ steps.commit.outputs.message }}"
+          if [[ "$msg" == major:* ]]; then
+            echo "level=major" >> $GITHUB_OUTPUT
+          elif [[ "$msg" == feat:* ]]; then
+            echo "level=minor" >> $GITHUB_OUTPUT
+          elif [[ "$msg" == fix:* ]]; then
+            echo "level=patch" >> $GITHUB_OUTPUT
+          else
+            echo "level=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get latest tag
+        id: tag
+        run: |
+          latest=$(git describe --tags --abbrev=0 2>/dev/null || echo "v-r-0.0.0")
+          echo "latest=$latest" >> $GITHUB_OUTPUT
+
+      - name: Compute next version
+        id: version
+        run: |
+          level="${{ steps.bump.outputs.level }}"
+          latest="${{ steps.tag.outputs.latest }}"
+          base=${latest#v-r-}
+          IFS='.' read -r major minor patch <<< "$base"
+
+          if [[ "$level" == "major" ]]; then
+            major=$((major+1)); minor=0; patch=0
+          elif [[ "$level" == "minor" ]]; then
+            minor=$((minor+1)); patch=0
+          elif [[ "$level" == "patch" ]]; then
+            patch=$((patch+1))
+          else
+            echo "No version bump"
+            exit 0
+          fi
+
+          new="v-r-$major.$minor.$patch"
+          echo "new=$new" >> $GITHUB_OUTPUT
+
+      - name: Download PDF from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: requete-philippe-savard-pdf
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.new != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.new }}
+          name: Release ${{ steps.version.outputs.new }}
+          body: |
+            ### Notes
+            Commit message:
+            ${{ steps.commit.outputs.message }}
+          files: |
+            requete_philippe_savard.pdf
